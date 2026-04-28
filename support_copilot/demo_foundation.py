@@ -10,7 +10,11 @@ from support_copilot.batch_job import run_batch
 from support_copilot.chains import build_pipeline
 from support_copilot.config import load_config
 from support_copilot.io import load_tickets_jsonl
-from support_copilot.memory import bind_session, build_follow_up_runnable, clear_session_store
+from support_copilot.memory import (
+    bind_session,
+    build_follow_up_runnable,
+    clear_session_store,
+)
 from support_copilot.smoke import main as smoke_main
 
 
@@ -55,7 +59,9 @@ def main() -> None:
 
     p_one = sub.add_parser("pipeline-one", help="Run full pipeline on one ticket")
     p_one.add_argument("--input", default="data/tickets.jsonl")
-    p_one.add_argument("--ticket-id", default="", help="Ticket id; defaults to first row if empty")
+    p_one.add_argument(
+        "--ticket-id", default="", help="Ticket id; defaults to first row if empty"
+    )
     p_one.set_defaults(func=_cmd_pipeline_one)
 
     p_batch = sub.add_parser("batch", help="Batch all tickets to reports/")
@@ -68,7 +74,9 @@ def main() -> None:
 
     p_batch.set_defaults(func=_run_batch)
 
-    p_fu = sub.add_parser("follow-up", help="Two isolated follow-up sessions (needs API)")
+    p_fu = sub.add_parser(
+        "follow-up", help="Two isolated follow-up sessions (needs API)"
+    )
     p_fu.add_argument("--input", default="data/tickets.jsonl")
     p_fu.add_argument("--ticket-a", default="T-1001")
     p_fu.add_argument("--ticket-b", default="T-1007")
