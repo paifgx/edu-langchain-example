@@ -1,0 +1,49 @@
+# Byte-compiled / optimized
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Packaging / build
+build/
+dist/
+*.egg-info/
+*.egg
+.eggs/
+wheels/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Secrets (nutze .env.example für Vorlage)
+.env
+.env.*
+!.env.example
+
+# pytest / Coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# Typing / Linting
+.mypy_cache/
+.ruff_cache/
+
+# IDE / Editor
+.idea/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Batch-Ausgaben unter reports/ (Verzeichnis bleibt via .gitkeep)
+reports/*
+!reports/.gitkeep
