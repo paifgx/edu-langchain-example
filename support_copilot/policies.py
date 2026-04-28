@@ -1,50 +1,52 @@
-"""Nachgelagerte Regeln — ergänzt Modellausgabe, ohne sie zu ersetzen."""
+"""Post-model policy: deterministic safety overrides (SOLID — one responsibility)."""
 
 from __future__ import annotations
 
 import re
 
-from support_copilot.domain import Ticket, TicketAnalysis, TicketCategory, TicketPriority
+from support_copilot.models import Priority, Ticket, TicketAnalysis, TicketCategory
 
 
-_INJECTION = re.compile(
-    r"ignore\s+(all\s+)?previous\s+instructions|you\s+are\s+now\s+[\"']?dan[\"']?|"
-    r"system\s+prompt|internal\s+tool|password\s+reset\s+link",
+_INJECTION_HINTS = re.compile(
+    r"ignore\s+(all\s+)?(previous|prior)\s+instructions|"
+    r"you\s+are\s+now\s+dan|system\s+prompt|password\s+reset\s+link|no\s+content\s+policy",
     re.IGNORECASE,
 )
 
 
-def analysis_needs_guard_correction(ticket: Ticket, analysis: TicketAnalysis) -> bool:
-    """Heuristische Prüfung: offensichtliche Fälle müssen eskalieren."""
+def apply_safety_overrides(ticket: Ticket, analysis: TicketAnalysis) -> tuple[TicketAnalysis, list[str]]:
+    """
+    Force escalation for obvious prompt-injection or embedded system-note abuse.
+    Complements the LLM: keeps the pipeline valid even if the model mis-triages.
+    """
+    notes: list[str] = []
     text = ticket.text
-    if _INJECTION.search(text):
-        return not analysis.requires_escalation
-    if analysis.category == TicketCategory.SECURITY and not analysis.requires_escalation:
-        return True
-    # PII-Fremddaten: typisches Schulungsbeispiel aus der Übung
+    if _INJECTION_HINTS.search(text):
+        notes.append("policy: suspected prompt-injection or jailbreak language")
+        analysis = analysis.model_copy(
+            update={
+                "category": TicketCategory.SECURITY,
+                "priority": Priority.CRITICAL,
+                "needs_escalation": True,
+                "confidence": min(analysis.confidence, 0.55),
+                "rationale": analysis.rationale[:1800]
+                + " [policy: escalated for injection-like content]",
+            }
+        )
     if "personenbezogene" in text.lower() and "anderen kunden" in text.lower():
-        return not analysis.requires_escalation
-    if "versehentlich personenbezogene" in text.lower():
-        return not analysis.requires_escalation
-    return False
+        notes.append("policy: third-party PII leak reported")
+        analysis = analysis.model_copy(
+            update={
+                "category": TicketCategory.SECURITY,
+                "priority": Priority.CRITICAL,
+                "needs_escalation": True,
+            }
+        )
+    return analysis, notes
 
 
-def apply_escalation_guard(ticket: Ticket, analysis: TicketAnalysis) -> TicketAnalysis:
-    """Setzt Eskalation konservativ, wenn Heuristik anspringt."""
-    if not analysis_needs_guard_correction(ticket, analysis):
-        return analysis
-    return analysis.model_copy(
-        update={
-            "requires_escalation": True,
-            "priority": (
-                TicketPriority.CRITICAL
-                if analysis.priority != TicketPriority.CRITICAL
-                else analysis.priority
-            ),
-            "category": TicketCategory.SECURITY
-            if analysis.category != TicketCategory.SECURITY
-            else analysis.category,
-            "rationale": analysis.rationale
-            + " [policy: heuristic escalation for security/compliance]",
-        }
-    )
+def should_escalate(analysis: TicketAnalysis) -> bool:
+    """Routing rule: critical/high priority or explicit human handoff."""
+    if analysis.needs_escalation:
+        return True
+    return analysis.priority in {Priority.HIGH, Priority.CRITICAL}

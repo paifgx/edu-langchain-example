@@ -1,13 +1,13 @@
-"""Support Copilot Fundament — Musterlösung Übung 01."""
+"""Support Copilot workshop package (Übung 01 — Fundament)."""
 
-from support_copilot.config import CopilotSettings
-from support_copilot.domain import PipelineResult, Ticket, TicketAnalysis
-from support_copilot.pipeline import SupportTicketPipeline
+from support_copilot.config import AppConfig, build_chat_model, load_config
+from support_copilot.models import PipelineResult, Ticket, TicketAnalysis
 
 __all__ = [
-    "CopilotSettings",
-    "PipelineResult",
-    "SupportTicketPipeline",
+    "AppConfig",
     "Ticket",
     "TicketAnalysis",
+    "PipelineResult",
+    "build_chat_model",
+    "load_config",
 ]

@@ -1,82 +1,77 @@
-"""Zentrale Konfiguration: .env, Modellprofile, optionales LangSmith."""
+"""Central configuration and model factories (single place for model names)."""
 
 from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import Any
+from typing import Literal
 
 from dotenv import load_dotenv
-from langchain_core.language_models import BaseChatModel
 from langchain_openai import ChatOpenAI
 
 
-@dataclass(frozen=True, slots=True)
-class ModelProfile:
-    """Ein benanntes LLM-Profil (z. B. günstig vs. stärker)."""
-
-    name: str
-    model: str
-    temperature: float = 0.0
+ProfileName = Literal["triage", "response"]
 
 
 @dataclass(frozen=True, slots=True)
-class CopilotSettings:
-    """Alle Laufzeitparameter aus Umgebungsvariablen."""
+class AppConfig:
+    """Runtime settings loaded from the environment."""
 
-    triage: ModelProfile
-    response: ModelProfile
+    openai_api_key: str
+    triage_model: str
+    response_model: str
+    triage_temperature: float
+    response_temperature: float
     langchain_tracing_v2: bool
     langchain_project: str | None
 
-    @staticmethod
-    def load() -> CopilotSettings:
-        load_dotenv(override=False)
-        triage_model = os.getenv("OPENAI_MODEL_TRIAGE") or os.getenv(
-            "OPENAI_MODEL", "gpt-4o-mini")
-        response_model = os.getenv("OPENAI_MODEL_RESPONSE") or os.getenv(
-            "OPENAI_MODEL", triage_model)
-        triage_temp = float(os.getenv("OPENAI_TEMPERATURE_TRIAGE", "0"))
-        response_temp = float(os.getenv("OPENAI_TEMPERATURE_RESPONSE", "0.2"))
-
-        tracing = os.getenv("LANGCHAIN_TRACING_V2",
-                            "").lower() in ("true", "1", "yes")
-        project = os.getenv("LANGCHAIN_PROJECT") or None
-
-        return CopilotSettings(
-            triage=ModelProfile("triage", triage_model, triage_temp),
-            response=ModelProfile("response", response_model, response_temp),
-            langchain_tracing_v2=tracing,
-            langchain_project=project,
+    @property
+    def langsmith_enabled(self) -> bool:
+        return self.langchain_tracing_v2 and bool(
+            os.getenv("LANGCHAIN_API_KEY") or os.getenv("LANGSMITH_API_KEY")
         )
 
-    def tracing_tags(self) -> list[str]:
-        tags = ["support-copilot", "uebung-01"]
-        if self.langchain_project:
-            tags.append(f"project:{self.langchain_project}")
-        return tags
 
-    def default_runnable_config(self) -> dict[str, Any]:
-        """Optionale Metadaten für Traces — harmlos ohne LangSmith."""
-        cfg: dict[str, Any] = {
-            "tags": self.tracing_tags(),
-            "metadata": {"app": "support-copilot-fundament"},
-        }
-        if self.langchain_project:
-            cfg["metadata"]["langsmith_project"] = self.langchain_project
-        return cfg
+def load_config() -> AppConfig:
+    """Load `.env` and construct config. Optional LangSmith vars must not break runs."""
+    load_dotenv()
+    tracing = os.getenv("LANGCHAIN_TRACING_V2", "").lower() in {"1", "true", "yes"}
+    return AppConfig(
+        openai_api_key=os.environ["OPENAI_API_KEY"],
+        triage_model=os.getenv("SUPPORT_COPILOT_TRIAGE_MODEL", "gpt-4o-mini"),
+        response_model=os.getenv(
+            "SUPPORT_COPILOT_RESPONSE_MODEL",
+            os.getenv("SUPPORT_COPILOT_TRIAGE_MODEL", "gpt-4o-mini"),
+        ),
+        triage_temperature=float(os.getenv("SUPPORT_COPILOT_TRIAGE_TEMPERATURE", "0.1")),
+        response_temperature=float(
+            os.getenv("SUPPORT_COPILOT_RESPONSE_TEMPERATURE", "0.2")
+        ),
+        langchain_tracing_v2=tracing,
+        langchain_project=os.getenv("LANGCHAIN_PROJECT"),
+    )
 
 
-class ChatModelFactory:
-    """Kapselt Erzeugung der Chat-Modelle (Single Place für Modellnamen)."""
+def build_chat_model(cfg: AppConfig, profile: ProfileName = "triage") -> ChatOpenAI:
+    """Create a shared `ChatOpenAI` instance; model name lives only here + env."""
+    if profile == "triage":
+        return ChatOpenAI(
+            model=cfg.triage_model,
+            temperature=cfg.triage_temperature,
+            api_key=cfg.openai_api_key,
+        )
+    return ChatOpenAI(
+        model=cfg.response_model,
+        temperature=cfg.response_temperature,
+        api_key=cfg.openai_api_key,
+    )
 
-    def __init__(self, settings: CopilotSettings) -> None:
-        self._settings = settings
 
-    def triage_llm(self) -> BaseChatModel:
-        p = self._settings.triage
-        return ChatOpenAI(model=p.model, temperature=p.temperature)
-
-    def response_llm(self) -> BaseChatModel:
-        p = self._settings.response
-        return ChatOpenAI(model=p.model, temperature=p.temperature)
+def trace_config(cfg: AppConfig, run_name: str, tags: list[str] | None = None) -> dict:
+    """Optional LangSmith metadata; empty when tracing is off."""
+    if not cfg.langsmith_enabled:
+        return {}
+    meta: dict = {"run_name": run_name, "tags": tags or []}
+    if cfg.langchain_project:
+        meta["metadata"] = {"project": cfg.langchain_project}
+    return meta

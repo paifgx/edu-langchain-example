@@ -1,23 +1,13 @@
-"""History-Store: keine Kreuz-Kontamination zwischen session_ids."""
+from langchain_core.messages import HumanMessage
 
-from langchain_core.messages import AIMessage, HumanMessage
-
-from support_copilot.follow_up import BoundedChatMessageHistory, SessionHistoryStore
+from support_copilot.memory import clear_session_store, get_session_history
 
 
-def test_bounded_history_truncates() -> None:
-    h = BoundedChatMessageHistory(max_messages=4)
-    for i in range(10):
-        h.add_messages(
-            [HumanMessage(content=f"u{i}"), AIMessage(content=f"a{i}")])
-    assert len(h.messages) == 4
-    assert "u9" in h.messages[-2].content  # type: ignore[union-attr]
-
-
-def test_session_isolation_in_store() -> None:
-    store = SessionHistoryStore()
-    sa, sb = store.get("alpha"), store.get("beta")
-    sa.add_messages([HumanMessage(content="secret-alpha")])
-    sb.add_messages([HumanMessage(content="secret-beta")])
-    assert "secret-alpha" not in [m.content for m in sb.messages]
-    assert "secret-beta" not in [m.content for m in sa.messages]
+def test_session_histories_are_isolated() -> None:
+    clear_session_store()
+    a = get_session_history("session-a")
+    b = get_session_history("session-b")
+    assert a is not b
+    a.add_messages([HumanMessage(content="secret-from-a")])
+    assert len(b.messages) == 0
+    assert "secret-from-a" in (a.messages[0].content or "")
